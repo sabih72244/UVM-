@@ -1,0 +1,56 @@
+interface apb_if(input logic clk);
+
+    logic reset;
+    logic psel;
+    logic penable;
+    logic pwrite;
+    logic [7:0]  paddr;
+    logic [31:0] pwdata;
+    logic [31:0] prdata;
+    logic pready;
+
+endinterface
+
+
+module apb_dut(
+    input logic clk,
+    input logic reset,
+
+    input logic psel,
+    input logic penable,
+    input logic pwrite,
+
+    input logic [7:0] paddr,
+    input logic [31:0] pwdata,
+
+    output logic [31:0] prdata,
+    output logic pready
+);
+
+    logic [31:0] mem [0:255];
+
+    always_ff @(posedge clk) begin
+
+        if (reset) begin
+            prdata <= 0;
+            pready <= 0;
+        end
+
+        else begin
+
+            pready <= 1;
+
+            if (psel && penable) begin
+
+                if (pwrite)
+                    mem[paddr] <= pwdata;
+                else
+                    prdata <= mem[paddr];
+
+            end
+
+        end
+
+    end
+
+endmodule

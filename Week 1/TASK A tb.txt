@@ -1,0 +1,300 @@
+`include "uvm_macros.svh"
+import uvm_pkg::*;
+
+
+// TRANSACTION
+class counter_trans extends uvm_sequence_item;
+
+    rand bit rst;
+
+    `uvm_object_utils(counter_trans)
+
+    function new(string name = "counter_trans");
+        super.new(name);
+    endfunction
+
+endclass
+
+
+// SEQUENCE
+class counter_seq extends uvm_sequence #(counter_trans);
+
+    `uvm_object_utils(counter_seq)
+
+    function new(string name = "counter_seq");
+        super.new(name);
+    endfunction
+
+    task body();
+
+        counter_trans tr;
+
+        repeat(5) begin
+
+            tr = counter_trans::type_id::create("tr");
+
+            start_item(tr);
+            tr.rst = 0;
+            finish_item(tr);
+
+        end
+
+    endtask
+
+endclass
+
+
+// DRIVER
+class counter_driver extends uvm_driver #(counter_trans);
+
+    `uvm_component_utils(counter_driver)
+
+    virtual counter_if vif;
+
+    function new(string name,
+                 uvm_component parent);
+        super.new(name,parent);
+    endfunction
+
+
+    function void build_phase(uvm_phase phase);
+
+        super.build_phase(phase);
+
+        if (!uvm_config_db#(virtual counter_if)::get(
+                this, "", "vif", vif))
+            `uvm_fatal("DRIVER", "VIF not found")
+
+    endfunction
+
+
+    task run_phase(uvm_phase phase);
+
+        counter_trans tr;
+
+        forever begin
+
+            seq_item_port.get_next_item(tr);
+
+            vif.rst = tr.rst;
+
+            @(posedge vif.clk);
+
+            seq_item_port.item_done();
+
+        end
+
+    endtask
+
+endclass
+
+
+// MONITOR
+class counter_monitor extends uvm_monitor;
+
+    `uvm_component_utils(counter_monitor)
+
+    virtual counter_if vif;
+
+    function new(string name,
+                 uvm_component parent);
+        super.new(name,parent);
+    endfunction
+
+
+    function void build_phase(uvm_phase phase);
+
+        super.build_phase(phase);
+
+        if (!uvm_config_db#(virtual counter_if)::get(
+                this, "", "vif", vif))
+            `uvm_fatal("MONITOR", "VIF not found")
+
+    endfunction
+
+
+    task run_phase(uvm_phase phase);
+
+        forever begin
+
+            @(posedge vif.clk);
+
+            `uvm_info("MONITOR",
+                $sformatf("Count = %0d", vif.count),
+                UVM_LOW)
+
+        end
+
+    endtask
+
+endclass
+
+
+// AGENT
+class counter_agent extends uvm_agent;
+
+    `uvm_component_utils(counter_agent)
+
+    uvm_sequencer #(counter_trans) seqr;
+    counter_driver drv;
+    counter_monitor mon;
+
+    function new(string name,
+                 uvm_component parent);
+        super.new(name,parent);
+    endfunction
+
+
+    function void build_phase(uvm_phase phase);
+
+        super.build_phase(phase);
+
+        seqr = uvm_sequencer #(counter_trans)
+               ::type_id::create("seqr",this);
+
+        drv = counter_driver::type_id::create("drv",this);
+
+        mon = counter_monitor::type_id::create("mon",this);
+
+    endfunction
+
+
+    function void connect_phase(uvm_phase phase);
+
+        drv.seq_item_port.connect(
+            seqr.seq_item_export);
+
+    endfunction
+
+endclass
+
+
+// ENVIRONMENT
+class counter_env extends uvm_env;
+
+    `uvm_component_utils(counter_env)
+
+    counter_agent agent;
+
+    function new(string name,
+                 uvm_component parent);
+        super.new(name,parent);
+    endfunction
+
+
+    function void build_phase(uvm_phase phase);
+
+        super.build_phase(phase);
+
+        agent = counter_agent::type_id::create(
+                "agent",this);
+
+    endfunction
+
+endclass
+
+
+// TEST
+class counter_test extends uvm_test;
+
+    `uvm_component_utils(counter_test)
+
+    counter_env env;
+
+    function new(string name,
+                 uvm_component parent);
+        super.new(name,parent);
+    endfunction
+
+
+    function void build_phase(uvm_phase phase);
+
+        super.build_phase(phase);
+
+        env = counter_env::type_id::create(
+              "env",this);
+
+    endfunction
+
+
+    task run_phase(uvm_phase phase);
+
+        counter_seq seq;
+
+        phase.raise_objection(this);
+
+        seq = counter_seq::type_id::create("seq");
+
+        seq.start(env.agent.seqr);
+
+        #100;
+
+        phase.drop_objection(this);
+
+    endtask
+
+endclass
+
+
+// TOP
+module lab1_tb;
+
+    logic clk;
+
+    counter_if intf(clk);
+
+
+    counter dut(
+        .clk(clk),
+        .rst(intf.rst),
+        .count(intf.count)
+    );
+
+
+    // CLOCK
+    initial begin
+
+        clk = 0;
+
+        forever #5 clk = ~clk;
+
+    end
+
+
+    // RESET
+    initial begin
+
+        intf.rst = 1;
+
+        #10;
+
+        intf.rst = 0;
+
+    end
+
+
+    // WAVEFORM
+    initial begin
+
+        $dumpfile("dump.vcd");
+
+        $dumpvars(0, lab1_tb);
+
+    end
+
+
+    // UVM
+    initial begin
+
+        uvm_config_db#(virtual counter_if)::set(
+            null,
+            "*",
+            "vif",
+            intf
+        );
+
+        run_test("counter_test");
+
+    end
+
+endmodule
